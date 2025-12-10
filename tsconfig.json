@@ -21,6 +21,10 @@
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
     "skipLibCheck": true,
+    "types": [
+      "node",
+      "yargs"
+    ],
     "typeRoots": [
       "./node_modules/@types"
     ]
