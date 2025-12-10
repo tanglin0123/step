@@ -23,7 +23,8 @@
     "skipLibCheck": true,
     "types": [
       "node",
-      "yargs"
+      "yargs",
+      "jest"
     ],
     "typeRoots": [
       "./node_modules/@types"
