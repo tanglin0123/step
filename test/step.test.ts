@@ -30,16 +30,16 @@ describe('StepStack', () => {
 
     test('Lambda function should have correct runtime', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
-        Runtime: 'nodejs18.x',
+        Runtime: 'nodejs16.x',
         Handler: 'index.handler',
         Timeout: 3,
       });
     });
 
-    test('Lambda function should have correct code', () => {
+    test('Lambda function should have correct code for processing', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
         Code: Match.objectLike({
-          ZipFile: Match.stringLikeRegexp('Hello World'),
+          ZipFile: Match.stringLikeRegexp('processedData'),
         }),
       });
     });
@@ -75,7 +75,8 @@ describe('StepStack', () => {
       const machineDefinition = Object.values(stateMachine)[0] as any;
       const definitionString = JSON.stringify(machineDefinition.Properties.DefinitionString);
       expect(definitionString).toContain('ProcessJob');
-      expect(definitionString).toContain('lambda:invoke');
+      // With payloadResponseOnly, it uses direct Lambda ARN instead of lambda:invoke
+      expect(definitionString).toContain('MyLambdaFunction');
     });
 
     test('State Machine definition should contain Wait task', () => {
@@ -160,7 +161,7 @@ describe('StepStack', () => {
 
     test('Trigger Lambda should have correct configuration', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
-        Runtime: 'nodejs18.x',
+        Runtime: 'nodejs16.x',
         Handler: 'index.handler',
         Timeout: 10,
       });
