@@ -25,7 +25,7 @@ describe('StepStack', () => {
 
   describe('Lambda Function', () => {
     test('should create Lambda functions', () => {
-      template.resourceCountIs('AWS::Lambda::Function', 2); // Original hello function + trigger lambda
+      template.resourceCountIs('AWS::Lambda::Function', 3); // Original hello function + trigger lambda + check status lambda
     });
 
     test('Lambda function should have correct runtime', () => {
@@ -136,7 +136,7 @@ describe('StepStack', () => {
 
     test('should create all necessary resources', () => {
       // Verify minimum required resources
-      template.resourceCountIs('AWS::Lambda::Function', 2); // Original + Trigger Lambda
+      template.resourceCountIs('AWS::Lambda::Function', 3); // Original + Trigger Lambda + Check Status Lambda
       template.resourceCountIs('AWS::StepFunctions::StateMachine', 1);
       
       const roles = template.findResources('AWS::IAM::Role');
@@ -156,7 +156,7 @@ describe('StepStack', () => {
     });
 
     test('should create a Lambda function to trigger state machine', () => {
-      template.resourceCountIs('AWS::Lambda::Function', 2); // Original + Trigger Lambda
+      template.resourceCountIs('AWS::Lambda::Function', 3); // Original + Trigger Lambda + Check Status Lambda
     });
 
     test('Trigger Lambda should have correct configuration', () => {
@@ -207,6 +207,85 @@ describe('StepStack', () => {
           ]),
         }),
       });
+    });
+  });
+
+  describe('Check Execution Status API', () => {
+    test('should create a Lambda function for checking execution status', () => {
+      template.resourceCountIs('AWS::Lambda::Function', 3);
+    });
+
+    test('Check Status Lambda should have correct configuration', () => {
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Runtime: 'nodejs16.x',
+        Handler: 'index.handler',
+        Timeout: 10,
+      });
+    });
+
+    test('Check Status Lambda should have code that calls describeExecution', () => {
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Code: Match.objectLike({
+          ZipFile: Match.stringLikeRegexp('describeExecution'),
+        }),
+      });
+    });
+
+    test('Check Status Lambda should have code that calls getExecutionHistory', () => {
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Code: Match.objectLike({
+          ZipFile: Match.stringLikeRegexp('getExecutionHistory'),
+        }),
+      });
+    });
+
+    test('should create API resource for /check endpoint', () => {
+      const resources = template.findResources('AWS::ApiGateway::Resource');
+      const resourceValues = Object.values(resources) as any[];
+      const checkResource = resourceValues.find(r => 
+        r.Properties?.PathPart === 'check'
+      );
+      expect(checkResource).toBeDefined();
+    });
+
+    test('should create GET method for /check endpoint', () => {
+      const methods = template.findResources('AWS::ApiGateway::Method');
+      const methodValues = Object.values(methods) as any[];
+      const checkMethod = methodValues.find(m => 
+        m.Properties?.HttpMethod === 'GET'
+      );
+      expect(checkMethod).toBeDefined();
+    });
+
+    test('Check Status Lambda should be granted permission to describe executions', () => {
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: Match.arrayWith([
+                'states:DescribeExecution',
+                'states:GetExecutionHistory'
+              ]),
+            }),
+          ]),
+        }),
+      });
+    });
+
+    test('Check Status Lambda should have permission to invoke from API Gateway', () => {
+      template.hasResourceProperties('AWS::Lambda::Permission', {
+        Action: 'lambda:InvokeFunction',
+      });
+    });
+
+    test('Check endpoint should require executionId query parameter', () => {
+      const methods = template.findResources('AWS::ApiGateway::Method');
+      const methodValues = Object.values(methods) as any[];
+      const checkMethod = methodValues.find(m => 
+        m.Properties?.HttpMethod === 'GET'
+      );
+      expect(checkMethod?.Properties?.RequestParameters).toBeDefined();
     });
   });
 
