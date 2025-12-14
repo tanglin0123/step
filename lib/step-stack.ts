@@ -18,6 +18,12 @@ export class StepStack extends cdk.Stack {
 
     const helloFunction = new lambda.Function(this, 'MyLambdaFunction', {
       code: lambda.Code.fromInline(`
+        const corsHeaders = {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Methods': 'OPTIONS,POST'
+        };
+
         exports.handler = async (event) => {
           try {
             console.log('Lambda function received event:', JSON.stringify(event, null, 2));
@@ -98,6 +104,12 @@ export class StepStack extends cdk.Stack {
         const stepFunctions = new AWS.StepFunctions();
         const crypto = require('crypto');
 
+        const corsHeaders = {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Methods': 'OPTIONS,POST'
+        };
+
         // Generate UUID v4
         function generateUUID() {
           return crypto.randomBytes(16).toString('hex').replace(
@@ -122,6 +134,10 @@ export class StepStack extends cdk.Stack {
             if (!requestBody) {
               return {
                 statusCode: 400,
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...corsHeaders,
+                },
                 body: JSON.stringify({
                   message: 'Request body is required',
                   error: 'No JSON body provided'
@@ -147,7 +163,8 @@ export class StepStack extends cdk.Stack {
             return {
               statusCode: 200,
               headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                ...corsHeaders,
               },
               body: JSON.stringify({
                 message: 'State Machine execution started successfully',
@@ -160,7 +177,8 @@ export class StepStack extends cdk.Stack {
             return {
               statusCode: 500,
               headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                ...corsHeaders,
               },
               body: JSON.stringify({
                 message: 'Failed to start state machine execution',
