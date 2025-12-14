@@ -24,8 +24,8 @@ describe('StepStack', () => {
   });
 
   describe('Lambda Function', () => {
-    test('should create a Lambda function', () => {
-      template.resourceCountIs('AWS::Lambda::Function', 1);
+    test('should create Lambda functions', () => {
+      template.resourceCountIs('AWS::Lambda::Function', 2); // Original hello function + trigger lambda
     });
 
     test('Lambda function should have correct runtime', () => {
@@ -135,7 +135,7 @@ describe('StepStack', () => {
 
     test('should create all necessary resources', () => {
       // Verify minimum required resources
-      template.resourceCountIs('AWS::Lambda::Function', 1);
+      template.resourceCountIs('AWS::Lambda::Function', 2); // Original + Trigger Lambda
       template.resourceCountIs('AWS::StepFunctions::StateMachine', 1);
       
       const roles = template.findResources('AWS::IAM::Role');
@@ -143,10 +143,87 @@ describe('StepStack', () => {
     });
   });
 
-  describe('Stack Snapshot', () => {
-    test('stack synthesis should match snapshot', () => {
-      const json = JSON.parse(JSON.stringify(template));
-      expect(json).toBeDefined();
+  describe('API Gateway and Trigger Lambda', () => {
+    test('should create an API Gateway REST API', () => {
+      template.resourceCountIs('AWS::ApiGateway::RestApi', 1);
+    });
+
+    test('API Gateway should have correct name', () => {
+      template.hasResourceProperties('AWS::ApiGateway::RestApi', {
+        Name: 'Step Function Trigger API',
+      });
+    });
+
+    test('should create a Lambda function to trigger state machine', () => {
+      template.resourceCountIs('AWS::Lambda::Function', 2); // Original + Trigger Lambda
+    });
+
+    test('Trigger Lambda should have correct configuration', () => {
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Runtime: 'nodejs18.x',
+        Handler: 'index.handler',
+        Timeout: 10,
+      });
+    });
+
+    test('Trigger Lambda should have STATE_MACHINE_ARN environment variable', () => {
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: Match.objectLike({
+          Variables: Match.objectLike({
+            STATE_MACHINE_ARN: Match.objectLike({}),
+          }),
+        }),
+      });
+    });
+
+    test('should create API Gateway resource', () => {
+      const resources = template.findResources('AWS::ApiGateway::Resource');
+      expect(Object.keys(resources).length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('should create API Gateway method', () => {
+      const methods = template.findResources('AWS::ApiGateway::Method');
+      expect(Object.keys(methods).length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('Trigger Lambda should have permission to invoke from API Gateway', () => {
+      template.hasResourceProperties('AWS::Lambda::Permission', {
+        Action: 'lambda:InvokeFunction',
+      });
+    });
+  });
+
+  describe('API Integration', () => {
+    test('Trigger Lambda should be granted permission to start state machine execution', () => {
+      // Verify that there is a policy allowing trigger lambda to invoke state machine
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: 'states:StartExecution',
+            }),
+          ]),
+        }),
+      });
+    });
+  });
+
+  describe('Stack Outputs', () => {
+    test('should have API Endpoint output', () => {
+      template.hasOutput('ApiEndpoint', {
+        Export: Match.objectLike({
+          Name: 'StepFunctionApiEndpoint',
+        }),
+      });
+    });
+
+    test('should have State Machine ARN output', () => {
+      template.hasOutput('StateMachineArn', {
+        Export: Match.objectLike({
+          Name: 'StateMachineArn',
+        }),
+      });
     });
   });
 });
