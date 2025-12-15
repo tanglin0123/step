@@ -30,19 +30,13 @@ describe('StepStack', () => {
 
     test('Lambda function should have correct runtime', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
-        Runtime: 'nodejs16.x',
+        Runtime: 'python3.11',
         Handler: 'index.handler',
         Timeout: 3,
       });
     });
 
-    test('Lambda function should have correct code for processing', () => {
-      template.hasResourceProperties('AWS::Lambda::Function', {
-        Code: Match.objectLike({
-          ZipFile: Match.stringLikeRegexp('processedData'),
-        }),
-      });
-    });
+    // Code is provided via asset (Python package), so no inline ZipFile assertion
   });
 
   describe('Step Functions State Machine', () => {
@@ -161,9 +155,10 @@ describe('StepStack', () => {
 
     test('Trigger Lambda should have correct configuration', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
-        Runtime: 'nodejs16.x',
-        Handler: 'index.handler',
+        Runtime: 'java17',
+        Handler: 'com.lintang.lambda.TriggerHandler::handleRequest',
         Timeout: 10,
+        MemorySize: 512,
       });
     });
 
@@ -217,25 +212,10 @@ describe('StepStack', () => {
 
     test('Check Status Lambda should have correct configuration', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
-        Runtime: 'nodejs16.x',
-        Handler: 'index.handler',
+        Runtime: 'java17',
+        Handler: 'com.lintang.lambda.CheckHandler::handleRequest',
         Timeout: 10,
-      });
-    });
-
-    test('Check Status Lambda should have code that calls describeExecution', () => {
-      template.hasResourceProperties('AWS::Lambda::Function', {
-        Code: Match.objectLike({
-          ZipFile: Match.stringLikeRegexp('describeExecution'),
-        }),
-      });
-    });
-
-    test('Check Status Lambda should have code that calls getExecutionHistory', () => {
-      template.hasResourceProperties('AWS::Lambda::Function', {
-        Code: Match.objectLike({
-          ZipFile: Match.stringLikeRegexp('getExecutionHistory'),
-        }),
+        MemorySize: 512,
       });
     });
 

@@ -2,6 +2,9 @@
 
 This document provides sample requests to test your deployed Step Functions API.
 
+- Processing Lambda: Python (`LinTangPythonLambda/index.py`, runtime `python3.11`)
+- Trigger and Check Lambdas: Java (`LinTangJavaLambda/target/function.jar`, runtime `java17`)
+
 ## API Endpoint
 
 After deploying with `cdk deploy`, you'll receive an API Gateway endpoint URL. It will look similar to:
@@ -17,7 +20,7 @@ The endpoint is also exported as a CloudFormation output: `StepFunctionApiEndpoi
 All requests must include the `Content-Type: application/json` header.
 
 ### HTTP Method
-Use `POST` to trigger the state machine.
+Use `POST` to trigger the state machine via the Java Lambda.
 
 ### Request Body
 The request body should be valid JSON that will be passed to the state machine and processed by the Lambda function.
@@ -34,7 +37,7 @@ This is the simplest valid request:
 }
 ```
 
-### Using curl:
+### Using curl (Trigger via Java Lambda):
 ```bash
 curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
   -H "Content-Type: application/json" \
@@ -43,7 +46,7 @@ curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
   }'
 ```
 
-### Expected Response:
+### Expected Response (from Java Trigger Lambda):
 ```json
 {
   "message": "State Machine execution started successfully",
@@ -336,7 +339,7 @@ fetch(apiEndpoint, {
 
 ---
 
-## Checking Execution Status
+## Checking Execution Status (Java Lambda)
 
 After triggering a state machine execution, you can check its status and retrieve the results using the `/check` endpoint.
 
@@ -379,7 +382,7 @@ GET https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/check?executionId={
 
 ## Sample Request 5: Check Execution Status
 
-### Using curl:
+### Using curl (Check via Java Lambda):
 ```bash
 curl -X GET "https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/check?executionId=a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -H "Content-Type: application/json"
