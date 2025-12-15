@@ -144,3 +144,18 @@ node_modules
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Maven build artifacts
+target/
+*.jar
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# VS Code settings
+.vscode/
