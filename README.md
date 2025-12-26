@@ -10,6 +10,35 @@ A complete serverless application using AWS Step Functions, API Gateway, and Lam
 - **Processing Lambda**: Python 3.11 — processes state machine input and returns results
 - **Step Functions**: Orchestrates Lambda execution with wait and completion tasks
 
+### State Machine Dependencies
+
+```mermaid
+flowchart TD
+  SFN[State Machine: ProcessAndReportJob]
+  Choice{processType}
+  ParallelMap[Map: ParallelProcess]
+  LoopMap[Map: LoopProcess]
+  ProcessJob[Task: ProcessJob]
+  ParallelProcessJob[Task: ParallelProcessJob]
+  LoopProcessJob[Task: LoopProcessJob]
+  Wait[Wait 5s]
+  FinalPass[Pass: FinalState]
+  Succeed[[Succeed]]
+
+  SFN --> Choice
+  Choice --> |parallel| ParallelMap
+  Choice --> |loop| LoopMap
+  Choice --> |whole| ProcessJob
+
+  ParallelMap --> ParallelProcessJob --> Wait
+  LoopMap --> LoopProcessJob --> Wait
+  ProcessJob --> Wait
+
+  Wait --> FinalPass --> Succeed
+```
+
+This diagram shows the Step Functions state machine flow: it branches on `processType`, runs the relevant map/task state, then converges through a wait and final pass state to `Succeed`.
+
 ## Project Structure
 
 ```
@@ -82,12 +111,43 @@ After deployment, the stack outputs will show:
 
 ### Trigger State Machine Execution
 
+Use `processType` to control execution mode and send either `items` (array) or a single `item`.
+
 ```bash
 API_URL="https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod"
 
+# Whole mode: Lambda processes items sequentially inside handler
 curl -X POST "$API_URL/trigger" \
   -H "Content-Type: application/json" \
-  -d '{"message":"Hello World","customData":{"key":"value"}}'
+  -d '{
+    "processType": "whole",
+    "items": ["item-1", "item-2", "item-3"],
+    "customData": {"source": "docs"}
+  }'
+
+# Loop mode: Step Functions iterates sequentially (Map with maxConcurrency=1)
+curl -X POST "$API_URL/trigger" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "processType": "loop",
+    "items": ["task-1", "task-2", "task-3"]
+  }'
+
+# Parallel mode: Step Functions iterates concurrently (maxConcurrency = items.length)
+curl -X POST "$API_URL/trigger" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "processType": "parallel",
+    "items": ["a", "b", "c", "d"]
+  }'
+
+# Single-item convenience: send 'item' instead of 'items'
+curl -X POST "$API_URL/trigger" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "processType": "whole",
+    "item": "single-item"
+  }'
 ```
 
 Response:

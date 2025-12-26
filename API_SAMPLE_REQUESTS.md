@@ -23,17 +23,21 @@ All requests must include the `Content-Type: application/json` header.
 Use `POST` to trigger the state machine via the Java Lambda.
 
 ### Request Body
-The request body should be valid JSON that will be passed to the state machine and processed by the Lambda function.
+The request body must be valid JSON with the following fields:
+- **processType**: `"parallel"`, `"loop"`, or `"whole"` (determines execution mode) — required
+- **items**: An array of non-empty strings to process — optional if `item` provided
+- **item**: A single non-empty string — optional convenience when not sending `items`
 
 ---
 
-## Sample Request 1: Basic Request (Minimal)
+## Sample Request 1: Parallel Processing
 
-This is the simplest valid request:
+Process multiple items concurrently (maxConcurrency = items.length):
 
 ```json
 {
-  "message": "Hello World"
+  "processType": "parallel",
+  "items": ["item1", "item2", "item3", "item4"]
 }
 ```
 
@@ -42,7 +46,8 @@ This is the simplest valid request:
 curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Hello World"
+    "processType": "parallel",
+    "items": ["item1", "item2", "item3", "item4"]
   }'
 ```
 
@@ -58,19 +63,14 @@ curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
 
 ---
 
-## Sample Request 2: Request with Custom Data
+## Sample Request 2: Loop Processing
 
-This request includes additional custom data that will be processed:
+Process items sequentially one at a time (maxConcurrency = 1):
 
 ```json
 {
-  "message": "Processing customer order",
-  "customData": {
-    "orderId": "ORD-12345",
-    "customerId": "CUST-67890",
-    "amount": 150.50,
-    "items": ["item1", "item2", "item3"]
-  }
+  "processType": "loop",
+  "items": ["order-123", "order-456", "order-789"]
 }
 ```
 
@@ -79,13 +79,8 @@ This request includes additional custom data that will be processed:
 curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Processing customer order",
-    "customData": {
-      "orderId": "ORD-12345",
-      "customerId": "CUST-67890",
-      "amount": 150.50,
-      "items": ["item1", "item2", "item3"]
-    }
+    "processType": "loop",
+    "items": ["order-123", "order-456", "order-789"]
   }'
 ```
 
@@ -99,36 +94,14 @@ curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
 
 ---
 
-## Sample Request 3: Data Processing Request
+## Sample Request 3: Whole Processing
 
-This request demonstrates various data types for processing:
+Process entire payload as a single item (no Map iteration):
 
 ```json
 {
-  "message": "Processing customer data batch",
-  "customData": {
-    "batchId": "BATCH-2025-001",
-    "timestamp": "2025-12-13T10:30:00Z",
-    "records": [
-      {
-        "id": 1,
-        "name": "Alice",
-        "email": "alice@example.com",
-        "status": "active"
-      },
-      {
-        "id": 2,
-        "name": "Bob",
-        "email": "bob@example.com",
-        "status": "inactive"
-      }
-    ],
-    "totalRecords": 2,
-    "metadata": {
-      "source": "API",
-      "priority": "high"
-    }
-  }
+  "processType": "whole",
+  "items": ["single-batch"]
 }
 ```
 
@@ -137,55 +110,51 @@ This request demonstrates various data types for processing:
 curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Processing customer data batch",
-    "customData": {
-      "batchId": "BATCH-2025-001",
-      "timestamp": "2025-12-13T10:30:00Z",
-      "records": [
-        {
-          "id": 1,
-          "name": "Alice",
-          "email": "alice@example.com",
-          "status": "active"
-        },
-        {
-          "id": 2,
-          "name": "Bob",
-          "email": "bob@example.com",
-          "status": "inactive"
-        }
-      ],
-      "totalRecords": 2,
-      "metadata": {
-        "source": "API",
-        "priority": "high"
-      }
-    }
+    "processType": "whole",
+    "items": ["single-batch-1", "single-batch-2"]
   }'
+
+### Single-item convenience (Whole processing)
+```bash
+curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
+  -H "Content-Type: application/json" \
+  -d '{
+    "processType": "whole",
+    "item": "single-item"
+  }'
+```
 ```
 
 ---
 
-## Sample Request 4: Default Values (Minimal Fields)
+## Error Responses
 
-If you send just an empty object, the Lambda will use default values:
-
+### Missing processType (HTTP 400):
 ```json
-{}
+{
+  "message": "processType is required (parallel|loop|whole)"
+}
 ```
 
-### Using curl:
-```bash
-curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
-  -H "Content-Type: application/json" \
-  -d '{}'
+### Invalid processType (HTTP 400):
+```json
+{
+  "message": "processType must be one of: parallel, loop, whole"
+}
 ```
 
-### Expected Response:
-The execution will use:
-- `executionName`: Auto-generated UUID (execution-{uuid})
-- `message`: "Hello from Lambda" (default)
-- `customData`: {} (empty)
+### Missing items and item (HTTP 400):
+```json
+{
+  "message": "Provide either 'items' (array of strings) or 'item' (single string)"
+}
+```
+
+### Items with empty strings (HTTP 400):
+```json
+{
+  "message": "items must contain non-empty strings"
+}
 
 ---
 
@@ -210,32 +179,25 @@ Click "Send" to execute the request
 
 ## Using Python
 
-### Basic Python Script
+### Basic Python Script (Loop)
 
 ```python
 import json
 import requests
 
-# Replace with your actual API endpoint
 API_ENDPOINT = "https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger"
 
-# Sample request payload
 payload = {
-    "message": "Triggered from Python",
-    "customData": {
-        "language": "python",
-        "timestamp": "2025-12-13T10:30:00Z"
-    }
+  "processType": "loop",
+  "items": ["task-1", "task-2", "task-3"]
 }
 
-# Make the request
 response = requests.post(
-    API_ENDPOINT,
-    json=payload,
-    headers={"Content-Type": "application/json"}
+  API_ENDPOINT,
+  json=payload,
+  headers={"Content-Type": "application/json"}
 )
 
-# Print the response
 print("Status Code:", response.status_code)
 print("Response:", json.dumps(response.json(), indent=2))
 ```
@@ -250,11 +212,8 @@ print("Response:", json.dumps(response.json(), indent=2))
 const apiEndpoint = "https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger";
 
 const payload = {
-  message: "Triggered from JavaScript",
-  customData: {
-    language: "javascript",
-    timestamp: new Date().toISOString()
-  }
+  processType: "parallel",
+  items: ["item1", "item2", "item3"]
 };
 
 fetch(apiEndpoint, {
@@ -266,65 +225,32 @@ fetch(apiEndpoint, {
 })
 .then(response => response.json())
 .then(data => {
-  console.log("Status:", data.statusCode);
   console.log("Response:", JSON.stringify(data, null, 2));
 })
 .catch(error => console.error("Error:", error));
 ```
-
----
-
-## Data Flow Through the System
-
-### 1. API Gateway receives the request
-- Endpoint: `/trigger`
-- Method: `POST`
-- Body: Your JSON payload
-
-### 2. Trigger Lambda processes the request
-- Receives: Event with your JSON in the `body` field
-- Validates: Ensures body is not empty
-- Parses: Converts string to JSON if needed
-- Generates: Creates a unique UUID for the execution name
-- Starts: Calls state machine with your JSON as input
-
-### 3. Step Functions State Machine executes
-- **ProcessJob**: Invokes the processing Lambda with your input
-- **Wait**: Waits 5 seconds
-- **FinalState**: Adds completion metadata
-- **Succeed**: Marks execution as successful
-
-### 4. Processing Lambda executes
-- Input: Your JSON payload from the state machine
-- Processing: Extracts fields, creates response object
-- Output: Returns processed data with metadata
-
-### 5. State Machine completes
-- Captures Lambda output in `$.lambdaResult`
-- Adds final state metadata
-- Marks execution as successful
-
----
-
-## Response Structure
-
-### Success Response (HTTP 200)
-
-```json
-{
-  "message": "State Machine execution started successfully",
-  "executionId": "execution-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-}
 ```
-
-**Note:** The `executionId` is a UUID automatically generated by the system for each execution. Use this ID to track your execution in the AWS Step Functions console.
-
 ### Error Response: Missing Body (HTTP 400)
 
 ```json
 {
-  "message": "Request body is required",
-  "error": "No JSON body provided"
+  "message": "Request body is required"
+}
+```
+
+### Error Response: Invalid processType (HTTP 400)
+
+```json
+{
+  "message": "processType must be one of: parallel, loop, whole"
+}
+```
+
+### Error Response: Invalid items (HTTP 400)
+
+```json
+{
+  "message": "items must be a non-empty array of strings"
 }
 ```
 
@@ -335,6 +261,7 @@ fetch(apiEndpoint, {
   "message": "Failed to start state machine execution",
   "error": "Error message details"
 }
+```
 ```
 
 ---
@@ -360,12 +287,13 @@ GET https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/check?executionId={
   "executionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "SUCCEEDED",
   "output": {
-    "originalInput": {...},
-    "message": "...",
-    "customData": {...},
-    "processedAt": "...",
-    "status": "processed",
-    "responseData": {...},
+    "parallelResults": [
+      { "item": "item1", "status": "processed" },
+      { "item": "item2", "status": "processed" }
+    ],
+    "loopResults": [
+      { "item": "order-123", "status": "processed" }
+    ],
     "finalResult": {
       "message": "State machine execution completed",
       "timestamp": "..."
@@ -415,33 +343,49 @@ api_url = 'https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod'
 response = requests.get(
     f'{api_url}/check',
     params={'executionId': execution_id},
-    headers={'Content-Type': 'application/json'}
-)
-
-if response.status_code == 200:
-    data = response.json()
-    print(f"Status: {data['status']}")
-    print(f"Output: {json.dumps(data['output'], indent=2)}")
-    print(f"Started: {data['startDate']}")
-    print(f"Completed: {data['stopDate']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
-```
-
-### Expected Responses:
-
 #### Success - Execution Completed (HTTP 200):
 ```json
 {
   "executionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "SUCCEEDED",
   "output": {
-    "originalInput": {"message": "Hello World"},
-    "message": "Hello World",
-    "customData": {},
-    "processedAt": "2025-12-13T10:30:00.000Z",
-    "status": "processed",
+    "parallelResults": [
+      {
+        "originalInput": {"item": "item1"},
+        "item": "item1",
+        "customData": {},
+        "processedAt": "2025-12-15T10:30:00.000Z",
+        "status": "processed",
+        "responseData": {
+          "greeting": "Processed item: item1 at 2025-12-15T10:30:00.000Z",
+          "inputFieldCount": 1,
+          "receivedFields": ["item"]
+        }
+      },
+      {
+        "originalInput": {"item": "item2"},
+        "item": "item2",
+        "customData": {},
+        "processedAt": "2025-12-15T10:30:00.100Z",
+        "status": "processed",
+        "responseData": {
+          "greeting": "Processed item: item2 at 2025-12-15T10:30:00.100Z",
+          "inputFieldCount": 1,
+          "receivedFields": ["item"]
+        }
+      }
+    ],
+    "finalResult": {
+      "message": "Parallel execution completed",
+      "timestamp": "2025-12-15T10:30:05.000Z"
+    }
+  },
+  "startDate": "2025-12-15T10:30:00.000Z",
+  "stopDate": "2025-12-15T10:30:10.000Z",
+  "cause": null,
+  "error": null
+}
+``` "status": "processed",
     "responseData": {
       "greeting": "Hello World - Processed at 2025-12-13T10:30:00.000Z",
       "inputFieldCount": 1,
@@ -511,27 +455,48 @@ else:
 - **FAILED**: The execution failed with an error
 - **TIMED_OUT**: The execution exceeded the timeout (5 minutes)
 - **ABORTED**: The execution was manually aborted
+## Lambda Output Structure
 
-## Monitoring the Execution
+When the processing Lambda completes, the state machine receives output with this structure:
 
-After triggering the execution, you can monitor it in the AWS Console:
+```json
+{
+  "originalInput": {
+    "item": "item1"
+  },
+  "item": "item1",
+  "customData": {},
+  "processedAt": "2025-12-15T10:30:00.000Z",
+  "status": "processed",
+  "responseData": {
+    "greeting": "Processed item: item1 at 2025-12-15T10:30:00.000Z",
+    "inputFieldCount": 1,
+    "receivedFields": ["item"]
+  }
+}
+```
 
-### Option 1: AWS Console
-1. Go to Step Functions
-2. Find "ProcessAndReportJob" state machine
-3. Look for your execution by name
-4. View execution details, including:
-   - Input
-   - Lambda output
-   - State machine state
-   - Final result
+## Processing Modes
 
-### Option 2: AWS CLI
+### Parallel Processing
+- **processType**: `"parallel"`
+- **Behavior**: All items processed concurrently
+- **maxConcurrency**: Set to the number of items
+- **Use Case**: Fast processing of independent items
+- **Output Path**: `$.parallelResults`
 
-```bash
-# List recent executions
-aws stepfunctions list-executions \
-  --state-machine-arn arn:aws:states:us-west-2:685915392751:stateMachine:ProcessAndReportJob \
+### Loop Processing
+- **processType**: `"loop"`
+- **Behavior**: Items processed sequentially one at a time
+- **maxConcurrency**: 1
+- **Use Case**: Order-dependent processing or rate-limited operations
+- **Output Path**: `$.loopResults`
+
+### Whole Processing
+- **processType**: `"whole"`
+- **Behavior**: Single Lambda invocation with entire payload
+- **Use Case**: Single-item or batch processing as one unit
+- **Output Path**: Direct Lambda output-state-machine-arn arn:aws:states:us-west-2:685915392751:stateMachine:ProcessAndReportJob \
   --region us-west-2
 
 # Get execution details

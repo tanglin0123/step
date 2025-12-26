@@ -7,12 +7,16 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.amazonaws.services.stepfunctions.AWSStepFunctions;
 import com.amazonaws.services.stepfunctions.AWSStepFunctionsClientBuilder;
 import com.amazonaws.services.stepfunctions.model.StartExecutionRequest;
 import com.amazonaws.services.stepfunctions.model.StartExecutionResult;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -35,16 +39,53 @@ public class TriggerHandler implements RequestHandler<APIGatewayProxyRequestEven
 
         try {
             if (event == null || event.getBody() == null || event.getBody().isEmpty()) {
-                Map<String, Object> body = Map.of(
-                        "message", "Request body is required",
-                        "error", "No JSON body provided"
-                );
-                response.setStatusCode(400);
-                response.setBody(writeJson(body));
-                return response;
+                return badRequest(response, "Request body is required");
             }
 
             JsonNode bodyJson = MAPPER.readTree(event.getBody());
+
+            // Validate processType
+            String rawProcessType = bodyJson.path("processType").asText(null);
+            if (rawProcessType == null) {
+                return badRequest(response, "processType is required (parallel|loop|whole)");
+            }
+
+            String processType = rawProcessType.toLowerCase();
+            if (!processType.equals("parallel") && !processType.equals("loop") && !processType.equals("whole")) {
+                return badRequest(response, "processType must be one of: parallel, loop, whole");
+            }
+
+            // Validate items; allow single 'item' for convenience
+            List<String> items = new ArrayList<>();
+            JsonNode itemsNode = bodyJson.get("items");
+            if (itemsNode != null && itemsNode.isArray()) {
+                if (itemsNode.size() == 0) {
+                    return badRequest(response, "items must be a non-empty array of strings");
+                }
+                for (JsonNode n : itemsNode) {
+                    if (!n.isTextual() || n.asText().isBlank()) {
+                        return badRequest(response, "items must contain non-empty strings");
+                    }
+                    items.add(n.asText());
+                }
+            } else {
+                JsonNode singleItemNode = bodyJson.get("item");
+                if (singleItemNode == null || !singleItemNode.isTextual() || singleItemNode.asText().isBlank()) {
+                    return badRequest(response, "Provide either 'items' (array of strings) or 'item' (single string)");
+                }
+                items.add(singleItemNode.asText());
+            }
+
+            ObjectNode inputPayload = MAPPER.createObjectNode();
+            inputPayload.put("processType", processType);
+            ArrayNode arr = inputPayload.putArray("items");
+            items.forEach(arr::add);
+            // Set maxConcurrency: use caller's value if provided, otherwise use items length for parallel processing
+            int maxConcurrency = items.size();
+            if (bodyJson.has("maxConcurrency") && bodyJson.get("maxConcurrency").isNumber()) {
+                maxConcurrency = bodyJson.get("maxConcurrency").asInt();
+            }
+            inputPayload.put("maxConcurrency", maxConcurrency);
 
             String stateMachineArn = System.getenv("STATE_MACHINE_ARN");
             if (stateMachineArn == null || stateMachineArn.isEmpty()) {
@@ -57,16 +98,16 @@ public class TriggerHandler implements RequestHandler<APIGatewayProxyRequestEven
 
             String executionName = "execution-" + UUID.randomUUID();
 
-                AWSStepFunctions sfn = AWSStepFunctionsClientBuilder.defaultClient();
+            AWSStepFunctions sfn = AWSStepFunctionsClientBuilder.defaultClient();
 
-                StartExecutionRequest req = new StartExecutionRequest()
-                    .withStateMachineArn(stateMachineArn)
-                    .withName(executionName)
-                    .withInput(bodyJson.toString());
+            StartExecutionRequest req = new StartExecutionRequest()
+                .withStateMachineArn(stateMachineArn)
+                .withName(executionName)
+                .withInput(inputPayload.toString());
 
-                StartExecutionResult startRes = sfn.startExecution(req);
+            StartExecutionResult startRes = sfn.startExecution(req);
 
-                String executionArn = startRes.getExecutionArn();
+            String executionArn = startRes.getExecutionArn();
             String[] parts = executionArn.split(":");
             String executionId = parts[parts.length - 1];
 
@@ -93,5 +134,13 @@ public class TriggerHandler implements RequestHandler<APIGatewayProxyRequestEven
         } catch (JsonProcessingException e) {
             return "{\"error\":\"serialization error\"}";
         }
+    }
+
+    private APIGatewayProxyResponseEvent badRequest(APIGatewayProxyResponseEvent response, String message) {
+        response.setStatusCode(400);
+        response.setBody(writeJson(Map.of(
+                "message", message
+        )));
+        return response;
     }
 }
