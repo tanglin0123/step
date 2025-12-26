@@ -28,6 +28,7 @@ export class StepStack extends cdk.Stack {
       outputPath: '$.Payload',
     });
 
+    // Separate instances for Map processors
     const parallelProcessJob = new tasks.LambdaInvoke(this, 'ParallelProcessJob', {
       lambdaFunction: processLambdaFunction,
       outputPath: '$.Payload',
@@ -44,12 +45,23 @@ export class StepStack extends cdk.Stack {
       }),
     });
 
+    // Failure state for handling errors
+    const failureState = new sfn.Fail(this, 'ProcessingFailed', {
+      error: 'ProcessingError',
+      cause: 'An error occurred during item processing',
+    });
+
+    // Add error handling to whole process Lambda
+    processJob.addCatch(failureState);
+
     const parallelProcess = new sfn.Map(this, 'ParallelProcess', {
       itemsPath: '$.items',
       resultPath: '$.parallelResults',
       maxConcurrencyPath: '$.maxConcurrency',
     });
     parallelProcess.itemProcessor(parallelProcessJob);
+    // Add error handling to parallel Map
+    parallelProcess.addCatch(failureState);
 
     const loopProcess = new sfn.Map(this, 'LoopProcess', {
       itemsPath: '$.items',
@@ -57,6 +69,8 @@ export class StepStack extends cdk.Stack {
       maxConcurrency: 1,
     });
     loopProcess.itemProcessor(loopProcessJob);
+    // Add error handling to loop Map
+    loopProcess.addCatch(failureState);
 
     // Wait states before each processor
     const waitBeforeWhole = new sfn.Wait(this, 'WaitBeforeWhole', {

@@ -5,11 +5,17 @@ from typing import Any, Dict, List
 
 def _process_single(item: Any, base_input: Dict[str, Any]) -> Dict[str, Any]:
     """Process a single item and return a result dict."""
-    timestamp = datetime.datetime.utcnow().isoformat() + 'Z'
     # Allow item to be a string or object; normalize string
     item_value = item if not isinstance(item, dict) else item.get('item', item)
+    
+    # Fail if item is "FAIL!"
+    if item_value == "FAIL!":
+        raise ValueError(f"Item processing failed for: {item_value}")
+    
+    timestamp = datetime.datetime.utcnow().isoformat() + 'Z'
     custom_data = base_input.get('customData', {})
 
+    
     return {
         'item': item_value,
         'processedItem': item_value.upper(),
@@ -58,10 +64,6 @@ def handler(event, context):
             'receivedFields': list(input_data.keys()),
         }
         return aggregate
-    except Exception as e:
-        # Return a structured error response
-        return {
-            'statusCode': 500,
-            'message': 'Lambda function execution failed',
-            'error': str(e)
-        }
+    except ValueError as e:
+        # Re-raise ValueError to fail the Lambda execution
+        raise
