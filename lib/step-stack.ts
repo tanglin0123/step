@@ -20,7 +20,7 @@ export class StepStack extends cdk.Stack {
       code: lambda.Code.fromAsset('LinTangPythonLambda'),
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'index.handler',
-      timeout: cdk.Duration.seconds(15),
+      timeout: cdk.Duration.seconds(900),
     });
 
     const processJob = new tasks.LambdaInvoke(this, 'ProcessJob', {
@@ -145,7 +145,7 @@ export class StepStack extends cdk.Stack {
 
     this.stateMachine = new sfn.StateMachine(this, 'MyStateMachine', {
       definitionBody: sfn.DefinitionBody.fromChainable(choiceState),
-      timeout: cdk.Duration.minutes(5),
+      timeout: cdk.Duration.minutes(30),
       stateMachineName: 'ProcessAndReportJob',
     });
 
