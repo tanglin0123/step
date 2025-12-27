@@ -72,6 +72,43 @@ export class StepStack extends cdk.Stack {
     // Add error handling to loop Map
     loopProcess.addCatch(failureState);
 
+    // Transform parallel results from array of Lambda responses to flat array of processed items
+    const transformParallelResults = new sfn.Pass(this, 'TransformParallelResults', {
+      resultPath: '$',
+      parameters: {
+        'processType.$': '$.processType',
+        'items.$': '$.items',
+        'originalInput': {
+          'processType.$': '$.processType',
+          'items.$': '$.items',
+          'maxConcurrency.$': '$.maxConcurrency',
+        },
+        'results.$': '$.parallelResults[*].results[0]',
+        'count.$': 'States.ArrayLength($.parallelResults)',
+        'processedAt.$': '$$.State.EnteredTime',
+        'status': 'processed',
+        'receivedFields.$': '$.parallelResults[0].receivedFields',
+      },
+    });
+
+    // Transform loop results from array of Lambda responses to flat array of processed items
+    const transformLoopResults = new sfn.Pass(this, 'TransformLoopResults', {
+      resultPath: '$',
+      parameters: {
+        'processType.$': '$.processType',
+        'items.$': '$.items',
+        'originalInput': {
+          'processType.$': '$.processType',
+          'items.$': '$.items',
+        },
+        'results.$': '$.loopResults[*].results[0]',
+        'count.$': 'States.ArrayLength($.loopResults)',
+        'processedAt.$': '$$.State.EnteredTime',
+        'status': 'processed',
+        'receivedFields.$': '$.loopResults[0].receivedFields',
+      },
+    });
+
     // Wait states before each processor
     const waitBeforeWhole = new sfn.Wait(this, 'WaitBeforeWhole', {
       time: sfn.WaitTime.duration(cdk.Duration.seconds(1)),
@@ -105,10 +142,12 @@ export class StepStack extends cdk.Stack {
 
     const parallelChain = sfn.Chain.start(waitBeforeParallel)
       .next(parallelProcess)
+      .next(transformParallelResults)
       .next(waitAfterParallel);
 
     const loopChain = sfn.Chain.start(waitBeforeLoop)
       .next(loopProcess)
+      .next(transformLoopResults)
       .next(waitAfterLoop);
 
     const finalState = new sfn.Pass(this, 'FinalState', {

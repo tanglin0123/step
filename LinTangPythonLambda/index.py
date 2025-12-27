@@ -12,7 +12,7 @@ def _process_single(item: Any, base_input: Dict[str, Any]) -> Dict[str, Any]:
     if item_value == "FAIL!":
         raise ValueError(f"Item processing failed for: {item_value}")
     
-    timestamp = datetime.datetime.utcnow().isoformat() + 'Z'
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat() + 'Z'
     custom_data = base_input.get('customData', {})
 
     
@@ -59,7 +59,7 @@ def handler(event, context):
             'originalInput': input_data,
             'results': results,
             'count': len(results),
-            'processedAt': datetime.datetime.utcnow().isoformat() + 'Z',
+            'processedAt': datetime.datetime.now(datetime.timezone.utc).isoformat() + 'Z',
             'status': 'processed',
             'receivedFields': list(input_data.keys()),
         }
