@@ -10,7 +10,7 @@ export function createApp(): cdk.App {
   };
 
   const stepStack = new StepStack(app, 'StepStack', { env });
-  new ApiStack(app, 'ApiStack', { env, stateMachine: stepStack.stateMachine });
+  const apiStack = new ApiStack(app, 'ApiStack', { env, stateMachine: stepStack.stateMachine });
 
   return app;
 }
