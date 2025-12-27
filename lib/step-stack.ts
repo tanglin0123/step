@@ -25,13 +25,14 @@ export class StepStack extends cdk.Stack {
 
     const processJob = new tasks.LambdaInvoke(this, 'ProcessJob', {
       lambdaFunction: processLambdaFunction,
-      outputPath: '$.Payload',
+      payloadResponseOnly: true,
+      resultPath: '$.results',
     });
 
     // Separate instances for Map processors
     const parallelProcessJob = new tasks.LambdaInvoke(this, 'ParallelProcessJob', {
       lambdaFunction: processLambdaFunction,
-      outputPath: '$.Payload',
+      payloadResponseOnly: true,
       payload: sfn.TaskInput.fromObject({
         item: sfn.JsonPath.stringAt('$'),
       }),
@@ -39,7 +40,7 @@ export class StepStack extends cdk.Stack {
 
     const loopProcessJob = new tasks.LambdaInvoke(this, 'LoopProcessJob', {
       lambdaFunction: processLambdaFunction,
-      outputPath: '$.Payload',
+      payloadResponseOnly: true,
       payload: sfn.TaskInput.fromObject({
         item: sfn.JsonPath.stringAt('$'),
       }),
@@ -56,7 +57,7 @@ export class StepStack extends cdk.Stack {
 
     const parallelProcess = new sfn.Map(this, 'ParallelProcess', {
       itemsPath: '$.items',
-      resultPath: '$.parallelResults',
+      resultPath: '$.results',
       maxConcurrencyPath: '$.maxConcurrency',
     });
     parallelProcess.itemProcessor(parallelProcessJob);
@@ -65,49 +66,14 @@ export class StepStack extends cdk.Stack {
 
     const loopProcess = new sfn.Map(this, 'LoopProcess', {
       itemsPath: '$.items',
-      resultPath: '$.loopResults',
+      resultPath: '$.results',
       maxConcurrency: 1,
     });
     loopProcess.itemProcessor(loopProcessJob);
     // Add error handling to loop Map
     loopProcess.addCatch(failureState);
 
-    // Transform parallel results from array of Lambda responses to flat array of processed items
-    const transformParallelResults = new sfn.Pass(this, 'TransformParallelResults', {
-      resultPath: '$',
-      parameters: {
-        'processType.$': '$.processType',
-        'items.$': '$.items',
-        'originalInput': {
-          'processType.$': '$.processType',
-          'items.$': '$.items',
-          'maxConcurrency.$': '$.maxConcurrency',
-        },
-        'results.$': '$.parallelResults[*].results[0]',
-        'count.$': 'States.ArrayLength($.parallelResults)',
-        'processedAt.$': '$$.State.EnteredTime',
-        'status': 'processed',
-        'receivedFields.$': '$.parallelResults[0].receivedFields',
-      },
-    });
-
-    // Transform loop results from array of Lambda responses to flat array of processed items
-    const transformLoopResults = new sfn.Pass(this, 'TransformLoopResults', {
-      resultPath: '$',
-      parameters: {
-        'processType.$': '$.processType',
-        'items.$': '$.items',
-        'originalInput': {
-          'processType.$': '$.processType',
-          'items.$': '$.items',
-        },
-        'results.$': '$.loopResults[*].results[0]',
-        'count.$': 'States.ArrayLength($.loopResults)',
-        'processedAt.$': '$$.State.EnteredTime',
-        'status': 'processed',
-        'receivedFields.$': '$.loopResults[0].receivedFields',
-      },
-    });
+    // No transform states needed when Lambda and Map write directly to $.results
 
     // Wait states before each processor
     const waitBeforeWhole = new sfn.Wait(this, 'WaitBeforeWhole', {
@@ -142,20 +108,25 @@ export class StepStack extends cdk.Stack {
 
     const parallelChain = sfn.Chain.start(waitBeforeParallel)
       .next(parallelProcess)
-      .next(transformParallelResults)
       .next(waitAfterParallel);
 
     const loopChain = sfn.Chain.start(waitBeforeLoop)
       .next(loopProcess)
-      .next(transformLoopResults)
       .next(waitAfterLoop);
 
     const finalState = new sfn.Pass(this, 'FinalState', {
-      resultPath: '$.finalResult',
-      result: sfn.Result.fromObject({
-        message: 'State machine execution completed',
-        timestamp: new Date().toISOString(),
-      }),
+      resultPath: '$',
+      parameters: {
+        originalInput: {
+          'processType.$': '$.processType',
+          'items.$': '$.items',
+          'maxConcurrency.$': '$.maxConcurrency',
+        },
+        'results.$': '$.results',
+        'count.$': 'States.ArrayLength($.results)',
+        'processedAt.$': '$$.State.EnteredTime',
+        'status': 'processed',
+      },
     });
 
     const successState = new sfn.Succeed(this, 'Succeed');
@@ -165,7 +136,8 @@ export class StepStack extends cdk.Stack {
     })
       .when(sfn.Condition.stringEquals('$.processType', 'parallel'), parallelChain)
       .when(sfn.Condition.stringEquals('$.processType', 'loop'), loopChain)
-      .otherwise(wholeChain);
+      .when(sfn.Condition.stringEquals('$.processType', 'whole'), wholeChain)
+      .otherwise(failureState);
 
     // All branches converge to finalState
     choiceState.afterwards().next(finalState);

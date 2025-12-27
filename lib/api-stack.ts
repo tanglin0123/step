@@ -42,19 +42,20 @@ export class ApiStack extends cdk.Stack {
       },
     });
 
-    const stateMachineArn = stateMachine.stateMachineArn;
-    const stateMachineName = stateMachineArn.split(':').pop();
-    const executionArn = cdk.Stack.of(this).formatArn({
-      service: 'states',
-      resource: 'execution',
-      resourceName: `${stateMachineName}:*`,
-    });
-
+    // Grant permissions to describe and get history for executions of this state machine
+    // Build execution ARN by replacing 'stateMachine' with 'execution' in the state machine ARN
+    const executionArnPattern = cdk.Fn.join('', [
+      cdk.Fn.select(0, cdk.Fn.split(':stateMachine:', stateMachine.stateMachineArn)),
+      ':execution:',
+      cdk.Fn.select(1, cdk.Fn.split(':stateMachine:', stateMachine.stateMachineArn)),
+      ':*'
+    ]);
+    
     checkExecutionStatusLambda.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ['states:DescribeExecution', 'states:GetExecutionHistory'],
-        resources: [executionArn],
+        resources: [executionArnPattern]
       })
     );
 

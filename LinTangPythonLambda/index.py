@@ -30,40 +30,19 @@ def handler(event, context):
     try:
         input_data: Dict[str, Any] = event if isinstance(event, dict) else {}
 
-        # If the map state passes a bare string, treat it as a single item
+        # If invoked with a bare string, return a single processed item
         if not isinstance(event, dict) and isinstance(event, str):
-            single_result = _process_single(event, {})
-            return {
-                'originalInput': event,
-                'results': [single_result],
-                'count': 1,
-                'status': 'processed',
-            }
+            return _process_single(event, {})
 
-        # Prefer list of items if provided
-        items: List[Any] = []
+        # Prefer list of items if provided; else treat 'item' as single-item input
         if 'items' in input_data and isinstance(input_data['items'], list):
-            items = input_data['items']
-        elif 'item' in input_data:
-            items = [input_data['item']]
-        else:
-            # No items provided; default behavior with a placeholder
-            items = ['default-item']
+            return [_process_single(it, input_data) for it in input_data['items']]
 
-        results: List[Dict[str, Any]] = []
-        for it in items:
-            results.append(_process_single(it, input_data))
+        if 'item' in input_data:
+            return _process_single(input_data['item'], input_data)
 
-        # Build aggregate response
-        aggregate = {
-            'originalInput': input_data,
-            'results': results,
-            'count': len(results),
-            'processedAt': datetime.datetime.now(datetime.timezone.utc).isoformat() + 'Z',
-            'status': 'processed',
-            'receivedFields': list(input_data.keys()),
-        }
-        return aggregate
+        # Default behavior with a placeholder when no items provided
+        return [_process_single('default-item', input_data)]
     except ValueError as e:
         # Re-raise ValueError to fail the Lambda execution
         raise

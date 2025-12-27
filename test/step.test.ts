@@ -43,9 +43,10 @@ describe('CDK App', () => {
       const machine = Object.values(resources)[0] as any;
       const definitionString = JSON.stringify(machine.Properties.DefinitionString);
 
+      expect(definitionString).toContain('ProcessModeChoice');
       expect(definitionString).toContain('ProcessJob');
-      expect(definitionString).toContain('Wait');
-      expect(definitionString).toContain('GreetedWorld');
+      expect(definitionString).toContain('FinalState');
+      expect(definitionString).toContain('ProcessingFailed');
     });
   });
 
