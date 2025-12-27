@@ -20,7 +20,7 @@ export class StepStack extends cdk.Stack {
       code: lambda.Code.fromAsset('LinTangPythonLambda'),
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'index.handler',
-      timeout: cdk.Duration.seconds(3),
+      timeout: cdk.Duration.seconds(15),
     });
 
     const processJob = new tasks.LambdaInvoke(this, 'ProcessJob', {
