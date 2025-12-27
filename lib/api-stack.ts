@@ -21,7 +21,7 @@ export class ApiStack extends cdk.Stack {
       code: lambda.Code.fromAsset('LinTangJavaLambda/target/function.jar'),
       runtime: lambda.Runtime.JAVA_17,
       handler: 'com.lintang.lambda.TriggerHandler::handleRequest',
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(60),
       memorySize: 512,
       environment: {
         STATE_MACHINE_ARN: stateMachine.stateMachineArn,
@@ -34,7 +34,7 @@ export class ApiStack extends cdk.Stack {
       code: lambda.Code.fromAsset('LinTangJavaLambda/target/function.jar'),
       runtime: lambda.Runtime.JAVA_17,
       handler: 'com.lintang.lambda.CheckHandler::handleRequest',
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(60),
       memorySize: 512,
       environment: {
         AWS_ACCOUNT_ID: this.account,
