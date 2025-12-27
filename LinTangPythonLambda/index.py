@@ -1,10 +1,14 @@
 import json
 import datetime
+import time
 from typing import Any, Dict, List
 
 
 def _process_single(item: Any, base_input: Dict[str, Any]) -> Dict[str, Any]:
     """Process a single item and return a result dict."""
+    # Wait 10 seconds before processing
+    time.sleep(10)
+    
     # Allow item to be a string or object; normalize string
     item_value = item if not isinstance(item, dict) else item.get('item', item)
     
