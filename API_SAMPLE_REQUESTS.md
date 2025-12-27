@@ -2,17 +2,22 @@
 
 This document provides sample requests to test your deployed Step Functions API.
 
-- Processing Lambda: Python (`LinTangPythonLambda/index.py`, runtime `python3.11`)
-- Trigger and Check Lambdas: Java (`LinTangJavaLambda/target/function.jar`, runtime `java17`)
+## Architecture
+
+- **Processing Lambda**: Python 3.11 (`LinTangPythonLambda/index.py`) — processes items within Step Functions
+- **Trigger Lambda**: Java 17 (`TriggerHandler`) — starts state machine executions
+- **Check Lambda**: Java 17 (`CheckHandler`) — retrieves execution status and results
 
 ## API Endpoint
 
-After deploying with `cdk deploy`, you'll receive an API Gateway endpoint URL. It will look similar to:
+After deploying with `cdk deploy --all`, you'll receive an API Gateway endpoint URL from the **ApiStack** output:
 ```
-https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger
+https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/
 ```
 
-The endpoint is also exported as a CloudFormation output: `StepFunctionApiEndpoint`
+Two endpoints are available:
+- **POST** `/trigger` — Start a new execution (via Trigger Lambda)
+- **GET** `/check?executionId=...` — Check execution status (via Check Lambda)
 
 ## Request Format
 
@@ -24,9 +29,13 @@ Use `POST` to trigger the state machine via the Java Lambda.
 
 ### Request Body
 The request body must be valid JSON with the following fields:
-- **processType**: `"parallel"`, `"loop"`, or `"whole"` (determines execution mode) — required
-- **items**: An array of non-empty strings to process — optional if `item` provided
-- **item**: A single non-empty string — optional convenience when not sending `items`
+- **processType**: (required) One of `"parallel"`, `"loop"`, or `"whole"`
+  - `"whole"`: Single Lambda invocation with entire payload
+  - `"loop"`: Sequential iteration (Map with maxConcurrency=1)
+  - `"parallel"`: Concurrent iteration (respects maxConcurrency)
+- **items**: (optional) Array of non-empty strings to process
+- **item**: (optional) Single non-empty string (convenience alternative to **items**)
+- **maxConcurrency**: (optional) Max concurrent iterations for parallel/loop modes; defaults to item count for parallel, 1 for loop
 
 ---
 
@@ -129,17 +138,18 @@ curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
 
 ## Error Responses
 
+### Invalid processType (HTTP 400)
+If `processType` is not one of `parallel`, `loop`, or `whole`, the state machine immediately fails:
+```json
+{
+  "message": "Invalid processType 'invalid'. Must be one of: parallel, loop, whole"
+}
+```
+
 ### Missing processType (HTTP 400):
 ```json
 {
   "message": "processType is required (parallel|loop|whole)"
-}
-```
-
-### Invalid processType (HTTP 400):
-```json
-{
-  "message": "processType must be one of: parallel, loop, whole"
 }
 ```
 
@@ -155,6 +165,21 @@ curl -X POST https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/trigger \
 {
   "message": "items must contain non-empty strings"
 }
+```
+
+### Processing Failure (HTTP 200 with FAILED status)
+When a Lambda raises an error (e.g., item equals `"FAIL!"`), the execution fails:
+```json
+{
+  "executionId": "execution-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "FAILED",
+  "output": null,
+  "startDate": 1766810000000,
+  "stopDate": 1766810010000,
+  "cause": "An error occurred during item processing",
+  "error": "ProcessingError"
+}
+```
 
 ---
 
@@ -268,7 +293,7 @@ fetch(apiEndpoint, {
 
 ## Checking Execution Status (Java Lambda)
 
-After triggering a state machine execution, you can check its status and retrieve the results using the `/check` endpoint.
+After triggering a state machine execution, use the `/check` endpoint to retrieve status and results.
 
 ### Endpoint
 
@@ -280,31 +305,51 @@ GET https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod/check?executionId={
 
 - `executionId` (required): The execution ID returned from the trigger response
 
-### Response Format
+### Unified Response Format
+
+All three processing modes (`whole`, `loop`, `parallel`) return a unified output structure:
 
 ```json
 {
-  "executionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "executionId": "execution-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "SUCCEEDED",
   "output": {
-    "parallelResults": [
-      { "item": "item1", "status": "processed" },
-      { "item": "item2", "status": "processed" }
+    "originalInput": {
+      "processType": "parallel",
+      "items": ["item1", "item2", "item3"],
+      "maxConcurrency": 3
+    },
+    "results": [
+      {
+        "item": "item1",
+        "processedItem": "ITEM1",
+        "customData": {},
+        "processedAt": "2025-12-27T04:36:24.817743+00:00Z",
+        "status": "processed",
+        "message": "Processed item: item1 at 2025-12-27T04:36:24.817743+00:00Z"
+      },
+      {
+        "item": "item2",
+        "processedItem": "ITEM2",
+        "customData": {},
+        "processedAt": "2025-12-27T04:36:24.749961+00:00Z",
+        "status": "processed",
+        "message": "Processed item: item2 at 2025-12-27T04:36:24.749961+00:00Z"
+      }
     ],
-    "loopResults": [
-      { "item": "order-123", "status": "processed" }
-    ],
-    "finalResult": {
-      "message": "State machine execution completed",
-      "timestamp": "..."
-    }
+    "count": 3,
+    "processedAt": "2025-12-27T04:36:26.107Z",
+    "status": "processed"
   },
-  "startDate": "2025-12-13T10:30:00.000Z",
-  "stopDate": "2025-12-13T10:30:10.000Z",
+  "startDate": 1766810183591,
+  "stopDate": 1766810186141,
   "cause": null,
-  "error": null
+  "error": null,
+  "events": [...]
 }
 ```
+
+The `events` array contains the full Step Functions execution history.
 
 ---
 
@@ -343,73 +388,70 @@ api_url = 'https://xxxxxxx.execute-api.us-west-2.amazonaws.com/prod'
 response = requests.get(
     f'{api_url}/check',
     params={'executionId': execution_id},
-#### Success - Execution Completed (HTTP 200):
+    headers={'Content-Type': 'application/json'}
+)
+print("Status Code:", response.status_code)
+print("Response:", json.dumps(response.json(), indent=2))
+```
+
+---
+
+## Check Response Examples
+
+#### Success - Execution Completed (HTTP 200, Unified Output):
 ```json
 {
-  "executionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "executionId": "execution-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "SUCCEEDED",
   "output": {
-    "parallelResults": [
+    "originalInput": {
+      "processType": "parallel",
+      "items": ["item1", "item2", "item3"],
+      "maxConcurrency": 3
+    },
+    "results": [
       {
-        "originalInput": {"item": "item1"},
         "item": "item1",
+        "processedItem": "ITEM1",
         "customData": {},
-        "processedAt": "2025-12-15T10:30:00.000Z",
+        "processedAt": "2025-12-27T04:36:24.817743+00:00Z",
         "status": "processed",
-        "responseData": {
-          "greeting": "Processed item: item1 at 2025-12-15T10:30:00.000Z",
-          "inputFieldCount": 1,
-          "receivedFields": ["item"]
-        }
+        "message": "Processed item: item1 at 2025-12-27T04:36:24.817743+00:00Z"
       },
       {
-        "originalInput": {"item": "item2"},
         "item": "item2",
+        "processedItem": "ITEM2",
         "customData": {},
-        "processedAt": "2025-12-15T10:30:00.100Z",
+        "processedAt": "2025-12-27T04:36:24.749961+00:00Z",
         "status": "processed",
-        "responseData": {
-          "greeting": "Processed item: item2 at 2025-12-15T10:30:00.100Z",
-          "inputFieldCount": 1,
-          "receivedFields": ["item"]
-        }
+        "message": "Processed item: item2 at 2025-12-27T04:36:24.749961+00:00Z"
+      },
+      {
+        "item": "item3",
+        "processedItem": "ITEM3",
+        "customData": {},
+        "processedAt": "2025-12-27T04:36:24.778027+00:00Z",
+        "status": "processed",
+        "message": "Processed item: item3 at 2025-12-27T04:36:24.778027+00:00Z"
       }
     ],
-    "finalResult": {
-      "message": "Parallel execution completed",
-      "timestamp": "2025-12-15T10:30:05.000Z"
-    }
+    "count": 3,
+    "processedAt": "2025-12-27T04:36:26.107Z",
+    "status": "processed"
   },
-  "startDate": "2025-12-15T10:30:00.000Z",
-  "stopDate": "2025-12-15T10:30:10.000Z",
+  "startDate": 1766810183591,
+  "stopDate": 1766810186141,
   "cause": null,
-  "error": null
-}
-``` "status": "processed",
-    "responseData": {
-      "greeting": "Hello World - Processed at 2025-12-13T10:30:00.000Z",
-      "inputFieldCount": 1,
-      "receivedFields": ["message"]
-    },
-    "finalResult": {
-      "message": "State machine execution completed",
-      "timestamp": "2025-12-13T10:30:05.000Z"
-    }
-  },
-  "startDate": "2025-12-13T10:30:00.000Z",
-  "stopDate": "2025-12-13T10:30:10.000Z",
-  "cause": null,
-  "error": null
-}
-```
+  "error": null,
+  "events": [...]
 
 #### Still Running - Execution In Progress (HTTP 200):
 ```json
 {
-  "executionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "executionId": "execution-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "RUNNING",
   "output": null,
-  "startDate": "2025-12-13T10:30:00.000Z",
+  "startDate": 1766810000000,
   "stopDate": null,
   "cause": null,
   "error": null
@@ -419,13 +461,13 @@ response = requests.get(
 #### Failed Execution (HTTP 200):
 ```json
 {
-  "executionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "executionId": "execution-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "FAILED",
   "output": null,
-  "startDate": "2025-12-13T10:30:00.000Z",
-  "stopDate": "2025-12-13T10:30:05.000Z",
-  "cause": "An error occurred during execution",
-  "error": "States.TaskFailed"
+  "startDate": 1766810000000,
+  "stopDate": 1766810005000,
+  "cause": "An error occurred during item processing",
+  "error": "ProcessingError"
 }
 ```
 
@@ -452,19 +494,31 @@ response = requests.get(
 
 - **RUNNING**: The execution is currently in progress
 - **SUCCEEDED**: The execution completed successfully
-- **FAILED**: The execution failed with an error
+- **FAILED**: The execution failed with an error (invalid processType, item error, or Lambda exception)
 - **TIMED_OUT**: The execution exceeded the timeout (5 minutes)
 - **ABORTED**: The execution was manually aborted
+
+---
+
 ## Lambda Output Structure
 
-When the processing Lambda completes, the state machine receives output with this structure:
+When the processing Lambda completes for a single item, it returns:
 
 ```json
 {
-  "originalInput": {
-    "item": "item1"
-  },
   "item": "item1",
+  "processedItem": "ITEM1",
+  "customData": {},
+  "processedAt": "2025-12-27T04:36:24.817743+00:00Z",
+  "status": "processed",
+  "message": "Processed item: item1 at 2025-12-27T04:36:24.817743+00:00Z"
+}
+```
+
+For `whole` mode: A single dict is returned.  
+For `loop`/`parallel` modes: A list of such dicts is returned (one per item).
+
+The Step Functions state machine then aggregates these into the unified output format with `originalInput`, `results`, `count`, `processedAt`, and `status` fields.
   "customData": {},
   "processedAt": "2025-12-15T10:30:00.000Z",
   "status": "processed",
@@ -478,25 +532,28 @@ When the processing Lambda completes, the state machine receives output with thi
 
 ## Processing Modes
 
+All modes return a **unified output** with `originalInput`, `results`, `count`, `processedAt`, and `status`.
+
 ### Parallel Processing
 - **processType**: `"parallel"`
-- **Behavior**: All items processed concurrently
-- **maxConcurrency**: Set to the number of items
-- **Use Case**: Fast processing of independent items
-- **Output Path**: `$.parallelResults`
+- **Behavior**: All items processed concurrently in a Map state
+- **maxConcurrency**: Configurable; defaults to length of items array
+- **Use Case**: Fast parallel processing of independent items
+- **State Machine Path**: `Choice → WaitBeforeParallel → ParallelProcess (Map) → WaitAfterParallel → FinalState → Succeed`
 
 ### Loop Processing
 - **processType**: `"loop"`
-- **Behavior**: Items processed sequentially one at a time
-- **maxConcurrency**: 1
-- **Use Case**: Order-dependent processing or rate-limited operations
-- **Output Path**: `$.loopResults`
+- **Behavior**: Items processed sequentially one at a time in a Map state
+- **maxConcurrency**: Always 1
+- **Use Case**: Order-dependent or rate-limited processing
+- **State Machine Path**: `Choice → WaitBeforeLoop → LoopProcess (Map) → WaitAfterLoop → FinalState → Succeed`
 
 ### Whole Processing
 - **processType**: `"whole"`
 - **Behavior**: Single Lambda invocation with entire payload
-- **Use Case**: Single-item or batch processing as one unit
-- **Output Path**: Direct Lambda output-state-machine-arn arn:aws:states:us-west-2:685915392751:stateMachine:ProcessAndReportJob \
+- **maxConcurrency**: N/A (no Map iteration)
+- **Use Case**: Single-item or batch processing as one atomic unit
+- **State Machine Path**: `Choice → WaitBeforeWhole → ProcessJob (Task) → WaitAfterWhole → FinalState → Succeed`-state-machine-arn arn:aws:states:us-west-2:685915392751:stateMachine:ProcessAndReportJob \
   --region us-west-2
 
 # Get execution details
@@ -538,9 +595,11 @@ When the processing Lambda completes, the state machine receives output with thi
 
 ## Notes
 
-- The state machine will wait 5 seconds after Lambda processing before completing
-- Executions timeout after 5 minutes
-- All timestamps are in ISO 8601 format
-- Custom data is preserved and passed through the entire workflow
-- Each execution is assigned a unique UUID automatically (format: `execution-{uuid}`)
-- The execution name is returned in the API response for tracking purposes
+- **Output Unification**: All three processing modes return an identical output structure, making it easy to switch modes without changing downstream code
+- **Wait States**: The state machine includes 1-second wait states before and after processing for operational visibility
+- **Failure Handling**: Invalid `processType` values cause immediate failure; item errors propagate to fail state
+- **Timestamps**: All dates are UNIX timestamps (milliseconds since epoch); processedAt timestamps may include timezone info from Lambda
+- **maxConcurrency**: Optional parameter; defaults to item array length for parallel, 1 for loop, ignored for whole
+- **Execution IDs**: Generated as UUID format `execution-{uuid}` for unique tracking
+- **IAM Scoping**: Check Lambda permissions are scoped to execution ARNs of the specific state machine, preventing cross-execution access
+- **Custom Data**: Preserved and passed through the entire workflow (visible in output under `originalInput`)

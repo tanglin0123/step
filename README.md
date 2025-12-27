@@ -10,41 +10,68 @@ A complete serverless application using AWS Step Functions, API Gateway, and Lam
 - **Processing Lambda**: Python 3.11 — processes state machine input and returns results
 - **Step Functions**: Orchestrates Lambda execution with wait and completion tasks
 
-### State Machine Dependencies
+### State Machine Flow
 
 ```mermaid
 flowchart TD
-  SFN[State Machine: ProcessAndReportJob]
-  Choice{processType}
-  ParallelMap[Map: ParallelProcess]
-  LoopMap[Map: LoopProcess]
-  ProcessJob[Task: ProcessJob]
-  ParallelProcessJob[Task: ParallelProcessJob]
-  LoopProcessJob[Task: LoopProcessJob]
-  Wait[Wait 5s]
-  FinalPass[Pass: FinalState]
-  Succeed[[Succeed]]
-
-  SFN --> Choice
-  Choice --> |parallel| ParallelMap
-  Choice --> |loop| LoopMap
-  Choice --> |whole| ProcessJob
-
-  ParallelMap --> ParallelProcessJob --> Wait
-  LoopMap --> LoopProcessJob --> Wait
-  ProcessJob --> Wait
-
-  Wait --> FinalPass --> Succeed
+  Start([Start]) --> Choice["ProcessModeChoice<br/>{processType?}"]
+  
+  Choice -->|invalid| Fail["ProcessingFailed<br/>(FAIL)"]
+  
+  Choice -->|whole| WaitBW["WaitBeforeWhole<br/>(1s)"]
+  Choice -->|parallel| WaitBP["WaitBeforeParallel<br/>(1s)"]
+  Choice -->|loop| WaitBL["WaitBeforeLoop<br/>(1s)"]
+  
+  WaitBW --> ProcessJob["ProcessJob<br/>(Lambda)"]
+  WaitBP --> ParallelMap["ParallelProcess<br/>(Map)"]
+  WaitBL --> LoopMap["LoopProcess<br/>(Map)"]
+  
+  ProcessJob -->|success| WaitAW["WaitAfterWhole<br/>(1s)"]
+  ProcessJob -->|catch| Fail
+  
+  ParallelMap -->|success| WaitAP["WaitAfterParallel<br/>(1s)"]
+  ParallelMap -->|catch| Fail
+  
+  LoopMap -->|success| WaitAL["WaitAfterLoop<br/>(1s)"]
+  LoopMap -->|catch| Fail
+  
+  WaitAW --> Converge["(choiceState.afterwards())"]
+  WaitAP --> Converge
+  WaitAL --> Converge
+  
+  Converge --> FinalState["FinalState<br/>(Pass)"]
+  
+  FinalState --> Succeed["Succeed"]
+  Fail --> Failed["Failed"]
+  
+  style Fail fill:#ffcccc
+  style Failed fill:#ff9999
+  style Succeed fill:#ccffcc
+  style Choice fill:#ffffcc
+  style FinalState fill:#e6f2ff
 ```
 
-This diagram shows the Step Functions state machine flow: it branches on `processType`, runs the relevant map/task state, then converges through a wait and final pass state to `Succeed`.
+**State Dependencies:**
+- **Choice Entry**: `ProcessModeChoice` branches on `processType` field
+- **Three Processing Chains**: Each chains wait → processor → wait
+  - `wholeChain`: WaitBeforeWhole → ProcessJob → WaitAfterWhole
+  - `parallelChain`: WaitBeforeParallel → ParallelProcess → WaitAfterParallel  
+  - `loopChain`: WaitBeforeLoop → LoopProcess → WaitAfterLoop
+- **Error Paths**: Invalid choice or errors from ProcessJob/Maps route directly to ProcessingFailed
+- **Convergence**: `choiceState.afterwards()` merges all successful paths to FinalState
+- **Parallel Outcomes**: Success path leads to Succeed; failure path leads to Failed state
+- **Execution Timeout**: 5 minutes (MaxDurationSeconds)
 
 ## Project Structure
 
 ```
 .
 ├── lib/                          # CDK TypeScript definitions
-│   └── step-stack.ts            # Main CDK stack
+│   ├── app.ts                   # App initialization and stack composition
+│   ├── step-stack.ts            # Step Functions & Processing Lambda stack
+│   └── api-stack.ts             # API Gateway & Java Lambdas stack
+├── bin/
+│   └── step.ts                  # CDK app entry point (calls lib/app.ts)
 ├── test/                         # Jest unit tests
 │   └── step.test.ts             # CDK stack tests
 ├── LinTangJavaLambda/           # Java Lambda project
@@ -96,16 +123,18 @@ Expected output: **All tests pass** (33 tests).
 
 ### 3. Deploy to AWS
 
-Synthesize and deploy the CDK stack:
+Synthesize and deploy both stacks:
 
 ```bash
 cdk synth
-cdk deploy --require-approval never
+cdk deploy --all --require-approval never
 ```
 
-After deployment, the stack outputs will show:
-- **ApiEndpoint**: The base API Gateway URL
-- **StateMachineArn**: The Step Functions state machine ARN
+After deployment, the stacks will output:
+- **StepStack**:
+  - `StateMachineArn`: The Step Functions state machine ARN
+- **ApiStack**:
+  - `ApiEndpoint`: The base API Gateway URL (used for both `/trigger` and `/check` endpoints)
 
 ## Usage
 
@@ -221,17 +250,23 @@ See `API_SAMPLE_REQUESTS.md` for more examples.
 
 ## IAM Permissions
 
-The CDK stack grants:
-- **TriggerHandler**: `states:StartExecution` on the state machine
-- **CheckHandler**: `states:DescribeExecution`, `states:GetExecutionHistory` on executions
-- **ProcessingLambda**: Implicit permissions to execute within the state machine
+The CDK stacks grant minimal required permissions:
+
+**StepStack:**
+- **ProcessingLambda**: Implicit permissions to execute within the state machine role
+
+**ApiStack:**
+- **TriggerHandler**: `states:StartExecution` on the specific state machine
+- **CheckHandler**: `states:DescribeExecution`, `states:GetExecutionHistory` on execution ARNs of the form `arn:aws:states:region:account:execution:ProcessAndReportJob:*`
+
+This ensures Lambda functions cannot access unrelated state machines or executions.
 
 ## Cleanup
 
 To remove all AWS resources:
 
 ```bash
-cdk destroy
+cdk destroy --all
 ```
 
 ## Support
