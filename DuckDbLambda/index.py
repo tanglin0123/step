@@ -32,8 +32,10 @@ def handler(event, context):
         region = os.environ.get('AWS_REGION', 'us-west-2')
         con.execute(f"SET s3_region='{region}';")
         
-        # Create a view/table from the S3 Parquet file
-        con.execute(f"CREATE VIEW parquet_data AS SELECT * FROM read_parquet('{s3_path}');")
+        # Only create parquet_data view if the query references it
+        if 'parquet_data' in query.lower():
+            # Create a view/table from the S3 Parquet file
+            con.execute(f"CREATE VIEW parquet_data AS SELECT * FROM read_parquet('{s3_path}');")
         
         # Execute the user's query
         result = con.execute(query).fetchall()

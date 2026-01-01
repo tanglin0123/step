@@ -66,6 +66,36 @@ Then in VS Code:
 - Run **Python: Select Interpreter** and pick `.venv`
 - Optionally run **Python: Restart Language Server**
 
+## Example Queries
+
+Sample data is available at `s3://lintang-test1/data_files/`:
+
+### Simple SELECT with LIMIT
+```json
+{
+  "s3_path": "s3://lintang-test1/data_files/gold_vs_bitcoin.parquet",
+  "query": "SELECT * FROM parquet_data LIMIT 5"
+}
+```
+
+### Aggregation (COUNT, AVG)
+```json
+{
+  "s3_path": "s3://lintang-test1/data_files/gold_vs_bitcoin.parquet",
+  "query": "SELECT COUNT(*) as total_rows, AVG(gold) as avg_gold, AVG(bitcoin) as avg_bitcoin FROM parquet_data"
+}
+```
+
+### Filtering with WHERE
+```json
+{
+  "s3_path": "s3://lintang-test1/data_files/gold_vs_bitcoin.parquet",
+  "query": "SELECT time, gold, bitcoin FROM parquet_data WHERE gold > 1.0 LIMIT 10"
+}
+```
+
+**Note:** The bucket contains multiple Parquet files with different schemas. Query individual files to avoid schema mismatch errors, or use `read_parquet(..., union_by_name=true)` for schema-aware union queries.
+
 ## Changing DuckDB version or Python runtime
 
 If you need a different DuckDB version, Python runtime, or AWS region:
