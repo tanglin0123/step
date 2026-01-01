@@ -59,6 +59,24 @@ export class ApiStack extends cdk.Stack {
       })
     );
 
+    const duckdbDataLambda = new lambda.Function(this, 'DuckDBDataLambda', {
+      code: lambda.Code.fromAsset('LinTangJavaLambda/target/function.jar'),
+      runtime: lambda.Runtime.JAVA_17,
+      handler: 'com.lintang.lambda.DataHandler::handleRequest',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 1024,
+      ephemeralStorageSize: cdk.Size.mebibytes(512),
+    });
+
+    // Grant S3 read permissions for DuckDB handler
+    duckdbDataLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['s3:GetObject'],
+        resources: ['arn:aws:s3:::lintang-test1/*']
+      })
+    );
+
     const api = new apigateway.RestApi(this, 'StepFunctionApi', {
       restApiName: 'Step Function Trigger API',
       description: 'API to trigger Step Functions state machine',
@@ -134,6 +152,38 @@ export class ApiStack extends cdk.Stack {
     });
 
     getMethod.addMethodResponse({
+      statusCode: '500',
+      responseModels: {
+        'application/json': apigateway.Model.EMPTY_MODEL,
+      },
+    });
+
+    const dataResource = api.root.addResource('data');
+    const postDataMethod = dataResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(duckdbDataLambda),
+      {
+        requestParameters: {
+          'method.request.header.Content-Type': true,
+        },
+      }
+    );
+
+    postDataMethod.addMethodResponse({
+      statusCode: '200',
+      responseModels: {
+        'application/json': apigateway.Model.EMPTY_MODEL,
+      },
+    });
+
+    postDataMethod.addMethodResponse({
+      statusCode: '400',
+      responseModels: {
+        'application/json': apigateway.Model.EMPTY_MODEL,
+      },
+    });
+
+    postDataMethod.addMethodResponse({
       statusCode: '500',
       responseModels: {
         'application/json': apigateway.Model.EMPTY_MODEL,
