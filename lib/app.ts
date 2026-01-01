@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { StepStack } from './step-stack';
 import { ApiStack } from './api-stack';
+import { DuckDbStack } from './duckdb-stack';
 
 export function createApp(): cdk.App {
   const app = new cdk.App();
@@ -11,6 +12,7 @@ export function createApp(): cdk.App {
 
   const stepStack = new StepStack(app, 'StepStack', { env });
   const apiStack = new ApiStack(app, 'ApiStack', { env, stateMachine: stepStack.stateMachine });
+  const duckDbStack = new DuckDbStack(app, 'DuckDbStack', { env });
 
   return app;
 }
