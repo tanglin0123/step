@@ -5,11 +5,8 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.duckdb.DuckDBConnection;
-
+import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -28,7 +25,7 @@ public class DataHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         try {
             // Parse request body
             String body = event.getBody();
-            Map<String, String> request = mapper.readValue(body, Map.class);
+            Map<String, String> request = mapper.readValue(body, new TypeReference<Map<String, String>>(){});
             
             String s3Path = request.get("s3_path");
             String query = request.get("query");
@@ -69,8 +66,6 @@ public class DataHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         // Create DuckDB connection in memory with /tmp as home directory
         String connectionUrl = "jdbc:duckdb::memory:";
         try (Connection conn = DriverManager.getConnection(connectionUrl)) {
-            DuckDBConnection duckConn = (DuckDBConnection) conn;
-            
             // Set home directory for extensions
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute("SET home_directory='" + tmpDir + "';");
