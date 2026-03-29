@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Sync Design on Requirements Change",
+  "description": "When requirements.md is edited, review and update design.md to stay consistent with the updated requirements.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      ".kiro/specs/step-functions-serverless-workflow/requirements.md"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The requirements doc was just edited. Review the changes and update .kiro/specs/step-functions-serverless-workflow/design.md to stay consistent — this includes updating component interfaces, data models, correctness properties, error handling tables, or the testing strategy if any requirements were added, changed, or removed. Only update sections that are affected."
+  }
+}

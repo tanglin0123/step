@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Sync Requirements on Source Change",
+  "description": "When key source files are edited, review and update the requirements doc to reflect any changes in behavior or contracts.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "LinTangJavaLambda/**/*.java",
+      "LinTangPythonLambda/*.py",
+      "DuckDbLambda/*.py",
+      "LinTangJavaLib/**/*.java",
+      "lib/*.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A source file was just edited. Review the changes and update .kiro/specs/step-functions-serverless-workflow/requirements.md if the edit introduces new behavior, changes existing contracts, or removes functionality. Only update the requirements if there is a meaningful change — do not rewrite sections that are still accurate."
+  }
+}
